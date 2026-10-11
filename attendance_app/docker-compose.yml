@@ -1,0 +1,12 @@
+services:
+  roll-call:
+    build: .
+    image: roll-call:latest
+    container_name: roll-call
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data          # database, face photos, evidence, Excel files stay on the server disk
+    environment:
+      - OMP_NUM_THREADS=4         # CPU threads for inference; set to the server's core count
+    restart: unless-stopped

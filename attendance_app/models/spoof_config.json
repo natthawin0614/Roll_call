@@ -1,0 +1,48 @@
+{
+ "device_detector": {
+  "onnx_file": "spoof_yolo26n_640.onnx",
+  "imgsz": 640,
+  "classes": [
+   "fake",
+   "real"
+  ],
+  "fake_class": 0,
+  "output_shape": [
+   "1",
+   "6",
+   "8400"
+  ],
+  "letterbox_pad": 114,
+  "conf": 0.75,
+  "ioa_min": 0.6,
+  "test_metrics_may_leak": {
+   "mAP50": 0.9808836237441196,
+   "mAP50_95": 0.8733698482243252,
+   "mAP50_95_fake": 0.9707102230852438,
+   "mAP50_95_real": 0.776029473363406
+  }
+ },
+ "antispoof": {
+  "onnx_file": "antispoof_convnext_ft.onnx",
+  "fine_tuned": true,
+  "threshold": 0.5,
+  "eer_threshold": 0.4433951675891876
+ },
+ "rule": "spoof if device_conf >= device_detector.conf OR P(spoof) >= antispoof.threshold",
+ "sweep_best": {
+  "dev_conf": 0.75,
+  "as_thr": 0.5,
+  "APCER rf_test": 0.001644736842105263,
+  "BPCER rf_test": 0.03254437869822485,
+  "APCER axon_holdout": 0.0,
+  "BPCER axon_holdout": null,
+  "APCER_lf": 0.0,
+  "BPCER_lf": null,
+  "ACER_lf": 0.0,
+  "F1_macro_all": 0.9878789577959702
+ },
+ "data": {
+  "roboflow": "weijers-workspace/face-anti-spoofing-detection-w9knd v1 (CC BY 4.0)",
+  "axon": "axondata/replay-attack-mobile-dataset-ibeta-1 sample (CC BY-NC 4.0), holdout Galaxy_a54-Honor70"
+ }
+}

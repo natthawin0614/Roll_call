@@ -1,0 +1,65 @@
+{
+ "backbone": "convnext_nano",
+ "weights": "ema",
+ "run": "convnext_aug",
+ "onnx_file": "antispoof_convnext_aug_ema.onnx",
+ "pt_file": "antispoof_convnext_aug_ema.pt",
+ "img_size": 224,
+ "color": "RGB",
+ "layout": "NCHW",
+ "normalize": {
+  "scale": "pixel / 255",
+  "mean": [
+   0.485,
+   0.456,
+   0.406
+  ],
+  "std": [
+   0.229,
+   0.224,
+   0.225
+  ]
+ },
+ "class_order": [
+  "live",
+  "spoof"
+ ],
+ "onnx_output": "probabilities (softmax included)",
+ "threshold": 0.19767668843269348,
+ "decision": "spoof if P(spoof) >= threshold",
+ "threshold_source": "EER point on CelebA-Spoof val (subject-disjoint)",
+ "face_detector": {
+  "weights": "yolo26s_widerface_960_best.pt",
+  "imgsz": 640,
+  "conf": 0.25,
+  "pick": "face with the highest confidence"
+ },
+ "crop": {
+  "scale": 1.5,
+  "box": "square, side = max(w, h) * scale, same center as the face box",
+  "outside_image": "shift the box inside the image; if side > min(W, H) use side = min(W, H)",
+  "resize": "crop -> 224x224, cv2.INTER_AREA"
+ },
+ "metrics": {
+  "val": {
+   "ACER": 0.005333333333333333,
+   "APCER": 0.005333333333333333,
+   "BPCER": 0.005333333333333333,
+   "AUC": 0.9994077777777777,
+   "EER": 0.005333333333333357,
+   "ACC": 0.9946666666666667,
+   "threshold": 0.19767668843269348
+  },
+  "val_degraded": {
+   "ACER": 0.009166666666666667,
+   "APCER": 0.008888888888888889,
+   "BPCER": 0.009444444444444445,
+   "AUC": 0.9987404999999999,
+   "EER": 0.009222222222222224,
+   "ACC": 0.9908333333333333,
+   "threshold": 0.19767668843269348,
+   "ACER_std": 0.0006236095644623225
+  },
+  "my": null
+ }
+}

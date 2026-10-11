@@ -1,0 +1,21 @@
+# --- personal data (faces of classmates) - never commit to a public repo ---
+image_pyiot/
+image_test_*/
+test_results/
+attendance_app/data/
+
+# --- models / training outputs: download from Google Drive (see README) ---
+roll_call/
+attendance_app/models/*.onnx
+*.pt
+
+# --- python / editors ---
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

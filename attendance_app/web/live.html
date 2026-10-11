@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roll Call · เช็คชื่อ</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <main class="container" style="max-width:1500px;padding-top:22px">
+    <section class="row between fade-in" style="margin-bottom:18px" id="head"></section>
+
+    <div class="live-layout">
+      <!-- camera (hero) -->
+      <section class="stack">
+        <div class="stage mirror" id="stage">
+          <video id="video" playsinline muted></video>
+          <canvas id="overlay"></canvas>
+          <div class="stage-placeholder" id="placeholder">
+            <div class="stack" style="align-items:center">
+              <div class="brand-mark" id="ph-mark" style="width:64px;height:64px;border-radius:18px"></div>
+              <h2 style="color:#efe6d3">พร้อมเช็คชื่อ</h2>
+              <p style="margin:0;max-width:420px">กด "เปิดกล้อง" แล้วให้นักศึกษามองกล้องทีละคน ระบบจะเช็คชื่อเมื่อยืนยันได้ต่อเนื่องหลายเฟรม</p>
+            </div>
+          </div>
+          <div class="stage-top">
+            <span class="pill" id="live-pill"><span class="rec"></span> LIVE · <span id="fps">-</span> fps</span>
+            <span class="pill" id="device-pill"></span>
+          </div>
+          <div class="feed" id="feed"></div>
+        </div>
+
+        <div class="card row between" style="padding:14px 18px">
+          <div class="row">
+            <select class="input" id="camera" style="width:auto;min-width:200px;max-width:340px;text-overflow:ellipsis"></select>
+            <label class="check small"><input type="checkbox" id="mirror" checked> กลับซ้าย-ขวา</label>
+          </div>
+          <div class="row">
+            <button class="btn" id="evidence-btn"></button>
+            <button class="btn gold" id="cam-btn"></button>
+          </div>
+        </div>
+        <div class="row small muted" style="gap:18px">
+          <span><span class="badge ok">●</span> เช็คชื่อสำเร็จ</span><span><span class="badge gold">●</span> เช็คแล้ว</span>
+          <span><span class="badge info">●</span> กำลังยืนยัน</span><span><span class="badge warn">●</span> ไม่แน่ใจ (แฝด/หน้าคล้าย)</span>
+          <span><span class="badge line">●</span> ไม่รู้จัก</span><span><span class="badge bad">●</span> สงสัยภาพปลอม</span>
+        </div>
+      </section>
+
+      <!-- roster -->
+      <aside class="card roster-panel" id="roster-panel">
+        <div class="row between">
+          <div><div class="eyebrow" style="margin:0">เวลาตอนนี้</div><div class="clock" id="clock">--:--</div></div>
+          <div style="text-align:right"><div class="small muted" id="late-info"></div><div class="small gold" id="late-left"></div></div>
+        </div>
+        <div class="counts">
+          <div class="count ok"><b id="c-present">0</b><span>มา</span></div>
+          <div class="count warn"><b id="c-late">0</b><span>สาย</span></div>
+          <div class="count bad"><b id="c-absent">0</b><span>ยังไม่มา</span></div>
+        </div>
+        <div class="tabs" id="rtabs" style="display:grid;grid-template-columns:repeat(3,1fr)">
+          <button data-f="all" class="active">ทั้งหมด</button><button data-f="in">เข้าแล้ว</button><button data-f="out">ยังไม่เข้า</button>
+        </div>
+        <input class="input" id="search" placeholder="ค้นหาชื่อหรือรหัส" style="padding:8px 14px">
+        <div class="roster-list" id="roster"></div>
+      </aside>
+    </div>
+  </main>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/live.js"></script>
+</body>
+</html>

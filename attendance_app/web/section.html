@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roll Call · ห้องเรียน</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <main class="container">
+    <a class="btn ghost sm" href="/" id="back"></a>
+
+    <section class="page-head fade-in" id="head"></section>
+
+    <div class="row between" style="margin-bottom:22px">
+      <div class="tabs" id="tabs">
+        <button data-tab="students" class="active">นักศึกษา</button>
+        <button data-tab="similar">ตรวจความคล้าย</button>
+        <button data-tab="history">ประวัติคาบ</button>
+      </div>
+      <div class="row" id="tools"></div>
+    </div>
+
+    <section id="tab-students"></section>
+    <section id="tab-similar" class="hidden"></section>
+    <section id="tab-history" class="hidden"></section>
+  </main>
+
+  <input type="file" id="file-input" accept="image/*" multiple class="hidden">
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/section.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roll Call · ตั้งค่า</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+</head>
+<body>
+  <main class="container" style="max-width:1060px">
+    <section class="page-head fade-in">
+      <div>
+        <div class="eyebrow">Settings</div>
+        <h1>ตั้งค่าระบบ</h1>
+        <p class="muted" style="margin:8px 0 0">ค่าทั้งหมดมาจาก <code>config.yaml</code> ค่าที่แก้ในหน้านี้บันทึกแยกไว้ใน <code>data/settings.yaml</code> และกดคืนค่าเดิมได้</p>
+      </div>
+      <div class="row"><button class="btn ghost" id="reset">คืนค่าเริ่มต้น</button><button class="btn gold" id="save">บันทึกการตั้งค่า</button></div>
+    </section>
+
+    <div class="stack" id="groups"></div>
+
+    <section class="card" style="margin-top:22px">
+      <h3>ข้อมูลสำหรับปรับปรุงโมเดล anti-spoof</h3>
+      <p class="muted small">ภาพหน้าที่เช็คชื่อสำเร็จ (คนจริง) และภาพที่อาจารย์ตรวจแล้วในหน้าหลักฐาน รวมเป็น zip โครงสร้าง <code>my_test/live</code>, <code>my_test/spoof/class</code>
+        ตรงกับ notebook 2 (section 7) ใช้ทดสอบหรือ fine-tune โมเดลด้วยกล้องจริงของห้องเรียน</p>
+      <a class="btn" href="/api/feedback/export" id="fb"></a>
+    </section>
+
+    <section class="card" style="margin-top:22px;border-color:color-mix(in srgb,var(--bad) 40%,transparent)">
+      <h3 style="color:var(--bad)">ข้อมูลส่วนบุคคล (PDPA)</h3>
+      <p class="muted small">รูปใบหน้า embedding และบันทึกการเช็คชื่อทั้งหมดเก็บอยู่ในโฟลเดอร์ <code>data/</code> ของเครื่องนี้เท่านั้น ไม่มีการส่งออกอินเทอร์เน็ต
+        ลบรายคนได้ที่หน้าห้องเรียน (คลิกที่นักศึกษา → ลบ) ลบทั้งห้องได้ที่ปุ่ม "ลบห้อง" หรือลบทุกอย่างที่นี่</p>
+      <button class="btn danger" id="wipe">ลบข้อมูลทั้งหมดในระบบ</button>
+    </section>
+  </main>
+
+  <script src="/static/js/common.js"></script>
+  <script src="/static/js/settings.js"></script>
+</body>
+</html>

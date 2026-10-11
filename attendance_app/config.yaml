@@ -1,0 +1,83 @@
+# =====================================================================
+#  Face Roll-Call — main configuration
+#  All paths are relative to this file. Values edited on the Settings
+#  page are saved to data/settings.yaml and override the values here.
+# =====================================================================
+
+server:
+  host: 127.0.0.1          # use 0.0.0.0 to open from other devices (tablet) on the LAN
+  port: 8000
+  https: false             # true = self-signed HTTPS (needed for camera from another device)
+
+paths:
+  data_dir: data                   # database, photos, evidence, exports (stays on this machine)
+  import_dir: ../image_pyiot       # default folder for "import from folder"
+
+models:
+  device: auto             # auto | gpu | cpu   (gpu = DirectML on Windows, CUDA on Linux)
+  detector:                # fine-tuned YOLO26s on WIDER FACE (notebook 1)
+    path: models/yolo26s_face_640.onnx
+    imgsz: 640
+    conf: 0.35
+    iou: 0.5
+  antispoof:               # convnext_nano live/spoof (notebook 2, fine-tuned in notebook 3)
+    path: models/antispoof_convnext_ft.onnx   # old model before fine-tune: models/antispoof_convnext.onnx
+    img_size: 224
+    crop_scale: 1.5        # must match training
+    mean: [0.485, 0.456, 0.406]
+    std: [0.229, 0.224, 0.225]
+  spoof_detector:          # YOLO26n: phone / screen / printed photo around a face (notebook 3)
+    path: models/spoof_yolo26n_640.onnx
+    imgsz: 640
+    fake_class: 0          # classes: 0 = fake (device / print), 1 = real face
+    ioa_min: 0.6           # the face counts as "inside" a device box when >= 60% of it is inside
+  landmarks:               # InsightFace SCRFD (buffalo_l/det_10g) -> 5 points to align the face
+    path: models/det_10g.onnx
+    input_size: 192
+    conf: 0.3
+  embedding:               # InsightFace ArcFace R50 (buffalo_l/w600k_r50), 512-d
+    path: models/w600k_r50.onnx
+
+# ---------------- thresholds you may tune ----------------
+antispoof:                 # liveness = 3 layers, see README "กันภาพปลอม"
+  mode: block              # block = spoof is not checked in | warn = check in but flag it | off
+  device_check: true       # layer 1: face inside a phone / screen / print box -> spoof
+  device_conf: 0.75        # YOLO26n confidence needed (notebook 3)
+  live_below: 0.20         # layer 2: mean P(spoof) <= this -> live
+  spoof_above: 0.90        #          mean P(spoof) >= this -> spoof; in between -> head-turn challenge
+  average_frames: 5        # P(spoof) is averaged over the last N good frames
+  challenge: true          # layer 3: unsure -> "turn left / right" (a photo or screen cannot do it)
+  challenge_yaw: 0.30      # how far the head must turn (0 = frontal, ~0.3 = 20 degrees)
+  challenge_timeout_sec: 6 # time to do it
+  challenge_tries: 2       # failed this many times -> spoof
+
+matching:
+  sim_threshold: 0.40      # cosine similarity needed to recognise someone
+  min_margin: 0.05         # top-1 must beat the next person by this much
+  risk_sim_threshold: 0.50 # stricter similarity for people in the "risk group" (twins / look-alikes)
+  risk_margin: 0.10        # stricter margin for the risk group
+  pair_check: true         # extra twin check (Fisher direction between the two people)
+  pair_min_photos: 3       # photos per person needed before the twin check is used
+  pair_min_confidence: 1.0 # how clearly the twin check must decide (in standard deviations)
+
+enroll:
+  similar_warn: 0.40       # two different students above this -> "maybe twin / look-alike" warning
+  min_face_px: 80          # face smaller than this (pixels) -> warning
+  min_sharpness: 40        # Laplacian variance of the aligned face; lower = blurry
+  max_yaw: 0.35            # how far the head may turn left/right (0 = frontal)
+  max_pitch: 0.25          # how far the head may tilt up/down
+  max_photos: 10           # photos per student
+
+attendance:
+  confirm_frames: 5        # live + same person in N frames in a row -> checked in
+  spoof_frames: 3          # phone / screen / print seen in N frames in a row -> spoof + evidence saved
+  ambiguous_frames: 6      # undecided for N frames -> ask the teacher to confirm
+  late_minutes: 15         # default "late" threshold for a new class
+  evidence_cooldown_sec: 20
+  min_face_px: 60          # ignore faces smaller than this in the live camera
+  max_yaw: 0.35            # quality gate: decide only when the face looks at the camera
+  max_pitch: 0.30
+
+camera:
+  send_width: 960          # frames are resized to this width before being sent to the server
+  jpeg_quality: 0.8
