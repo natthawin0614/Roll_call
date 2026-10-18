@@ -50,11 +50,9 @@ function showTab(tab) {
 }
 
 $("#tools").innerHTML = `
-  <button class="btn" id="import-btn">${ICONS.folder} นำเข้าจากโฟลเดอร์</button>
-  <button class="btn" id="bulk-btn">${ICONS.upload} อัปโหลดหลายคน</button>
+  <button class="btn" id="import-btn">${ICONS.folder} นำเข้าหลายคน</button>
   <button class="btn gold" id="add-btn">${ICONS.plus} เพิ่มนักศึกษา</button>`;
-$("#import-btn").onclick = importDialog;
-$("#bulk-btn").onclick = bulkDialog;
+$("#import-btn").onclick = multiDialog;
 $("#add-btn").onclick = () => studentDialog(null);
 
 // ---------------------------------------------------------------- students
@@ -64,7 +62,7 @@ async function loadStudents() {
   if (!students.length) {
     box.innerHTML = `<div class="empty"><h3 style="margin-bottom:8px">ยังไม่มีนักศึกษา</h3>
       <p>นำเข้ารูปจากโฟลเดอร์ (ชื่อไฟล์ = ชื่อนักศึกษา) หรือเพิ่มทีละคน แนะนำ 3–5 รูปต่อคน ต่างมุม ต่างแสง</p>
-      <div class="row" style="justify-content:center"><button class="btn gold" onclick="importDialog()">${ICONS.folder} นำเข้าจากโฟลเดอร์</button>
+      <div class="row" style="justify-content:center"><button class="btn gold" onclick="multiDialog()">${ICONS.folder} นำเข้าหลายคน</button>
       <button class="btn" onclick="studentDialog(null)">${ICONS.plus} เพิ่มทีละคน</button></div></div>`;
     return;
   }
@@ -80,7 +78,7 @@ async function loadStudents() {
     ["dragleave", "drop"].forEach((ev) => card.addEventListener(ev, (e) => { e.preventDefault(); card.classList.remove("drag"); }));
     card.addEventListener("drop", (e) => {
       const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
-      if (files.length) withConsent(() => uploadPhotos(st, files));
+      if (files.length) studentDialog(st, files);
     });
   });
   $$(".thumb .x", box).forEach((x) => x.addEventListener("click", (e) => { e.stopPropagation(); deletePhoto(x.dataset.photo); }));
@@ -110,45 +108,6 @@ function studentCard(st) {
     </article>`;
 }
 
-function withConsent(action) {
-  if (consentGiven) return action();
-  const m = openModal(`<div class="modal-head"><div><div class="eyebrow">PDPA</div><h3>ขอความยินยอมก่อนเพิ่มรูปใบหน้า</h3></div></div>
-    ${consentBlock("c1")}
-    <div class="modal-foot"><button class="btn ghost" data-close>ยกเลิก</button><button class="btn gold" id="ok">ยืนยัน</button></div>`);
-  $("#ok", m.el).onclick = () => {
-    if (!$("#c1", m.el).checked) return toast("กรุณาติ๊กยืนยันความยินยอม", "warn");
-    consentGiven = true;
-    m.close();
-    action();
-  };
-}
-
-async function uploadPhotos(st, files) {
-  const form = new FormData();
-  files.forEach((f) => form.append("files", f));
-  form.append("consent", "true");
-  toast(`กำลังประมวลผล ${files.length} รูป...`, "warn", 1500);
-  const res = await api(`/api/students/${st.id}/photos`, { method: "POST", body: form });
-  showUploadResults(st.name, res);
-  await loadStudents();
-  loadSection();
-  return res;
-}
-
-function showUploadResults(name, res) {
-  const bad = res.results.filter((r) => !r.ok || r.warnings.length);
-  const okCount = res.results.filter((r) => r.ok).length;
-  if (!bad.length && !res.lookalikes.length) return toast(`เพิ่มรูปของ ${name} แล้ว ${okCount} รูป`);
-  openModal(`<div class="modal-head"><h3>ผลการเพิ่มรูป · ${esc(name)}</h3><button class="icon-btn" data-close>${ICONS.x}</button></div>
-    <p>เพิ่มสำเร็จ <b class="gold">${okCount}</b> / ${res.results.length} รูป</p>
-    <div class="list">${bad.map((r) => `<div class="list-item"><span class="badge ${r.ok ? "warn" : "bad"}">${r.ok ? "เตือน" : "ไม่ผ่าน"}</span>
-      <div><div>${esc(r.file)}</div><div class="muted small">${esc(r.ok ? r.warnings.join(" · ") : r.message)}</div></div></div>`).join("")}</div>
-    ${res.lookalikes.length ? `<hr class="divider"><div class="list-item" style="background:var(--warn-bg)"><span class="gold">${ICONS.twin}</span>
-      <div><b>อาจเป็นแฝด / หน้าคล้าย</b><div class="small">${res.lookalikes.map((l) => `${esc(l.name)} (${l.similarity})`).join(", ")}
-      — ระบบจัดเข้ากลุ่มเสี่ยงให้แล้ว แนะนำเพิ่มรูปเป็น 8–10 รูปต่อคน</div></div></div>` : ""}
-    <div class="modal-foot"><button class="btn gold" data-close>ตกลง</button></div>`);
-}
-
 async function deletePhoto(id) {
   if (!(await confirmBox("ลบรูปนี้?", "รูปและ embedding ของรูปนี้จะถูกลบถาวร", { ok: "ลบ", danger: true }))) return;
   await api(`/api/photos/${id}`, { method: "DELETE" });
@@ -157,7 +116,88 @@ async function deletePhoto(id) {
   loadSection();
 }
 
-function studentDialog(st) {
+// ---------------------------------------------------------------- upload helpers
+const IMG_EXT = /\.(jpe?g|png|webp|bmp)$/i;
+const stemOf = (n) => n.replace(/\.[^.]+$/, "");
+
+// Same rules as enroll.parse_name on the server: '6501234_สมชาย' -> code + name, 'อะตอม(1)' -> 'อะตอม'
+function parseName(stem) {
+  stem = stem.trim().replace(/\s*[\(\[]\d+[\)\]]$|[_\- ]\d{1,2}$/, "");
+  const m = stem.match(/^(\d{5,})[\s_\-]+(.+)$/);
+  return m ? { code: m[1], name: m[2].trim() } : { code: "", name: stem };
+}
+
+// Phone photos are 4000px+: shrink in the browser so uploads are fast (the server keeps 1280px anyway).
+async function shrinkImage(file, maxSide = 1600) {
+  try {
+    const bmp = await createImageBitmap(file);
+    const s = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    if (s === 1 && file.size < 1.5e6) { bmp.close && bmp.close(); return file; }
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    bmp.close && bmp.close();
+    return (await new Promise((r) => c.toBlob(r, "image/jpeg", 0.92))) || file;
+  } catch (_) { return file; }
+}
+
+// Files from a drop, including whole folders (each item keeps its relative path).
+async function filesFromDrop(e) {
+  const entries = [...(e.dataTransfer.items || [])].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean);
+  if (!entries.length) return [...e.dataTransfer.files].map((f) => ({ file: f, path: f.name }));
+  const out = [];
+  const walk = async (entry, prefix) => {
+    if (entry.isFile) {
+      const f = await new Promise((res, rej) => entry.file(res, rej));
+      out.push({ file: f, path: prefix + f.name });
+    } else if (entry.isDirectory) {
+      const reader = entry.createReader();
+      let batch;
+      do {
+        batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        for (const child of batch) await walk(child, `${prefix}${entry.name}/`);
+      } while (batch.length);
+    }
+  };
+  for (const entry of entries) await walk(entry, "");
+  return out;
+}
+
+// Group like scan_folder: sub-folder = student, or file name = student ('ชื่อ(1).jpg' = extra photo).
+function groupFiles(list) {
+  const imgs = list.filter((x) => IMG_EXT.test(x.file.name));
+  const parts = imgs.map((x) => x.path.split("/").filter(Boolean));
+  const base = parts.length && parts.every((p) => p.length > 1 && p[0] === parts[0][0]) ? 1 : 0;   // the picked folder
+  const rel = parts.map((p) => p.slice(base));
+  const loose = rel.some((p) => p.length === 1);
+  const groups = new Map();
+  const ignored = new Set();
+  imgs.forEach((x, i) => {
+    const p = rel[i];
+    if (loose && p.length > 1) { ignored.add(p[0]); return; }      // loose photos win, like the server
+    const { code, name } = parseName(loose ? stemOf(p[0]) : p[0]);
+    if (!name) return;
+    if (!groups.has(name)) groups.set(name, { code, name, files: [] });
+    groups.get(name).files.push(x.file);
+  });
+  return { layout: loose ? "files" : "subfolders", groups: [...groups.values()], ignored: [...ignored] };
+}
+
+// iPhone/iPad Safari cannot pick a folder (iPadOS reports itself as a Mac, so also check touch)
+const IS_IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const CAMERA_NAME = /^(IMG|DSC|PXL|image|photo)[_\- ]?\d+/i;   // default camera file names, not student names
+
+function pickFiles({ folder = false } = {}) {
+  return new Promise((resolve) => {
+    const input = document.createElement("input");
+    input.type = "file"; input.multiple = true; input.accept = "image/*";
+    if (folder) input.webkitdirectory = true;
+    input.onchange = () => resolve([...input.files].map((f) => ({ file: f, path: f.webkitRelativePath || f.name })));
+    input.click();
+  });
+}
+
+function studentDialog(st, initialFiles = null) {
   const m = openModal(`
     <div class="modal-head"><div><div class="eyebrow">${st ? "นักศึกษา" : "เพิ่มนักศึกษา"}</div><h2>${st ? esc(st.name) : "นักศึกษาใหม่"}</h2></div>
       <button class="icon-btn" data-close>${ICONS.x}</button></div>
@@ -171,33 +211,144 @@ function studentDialog(st) {
     ${st ? `<hr class="divider"><div class="row between"><h3>รูปอ้างอิง (${st.photos.length})</h3>
       <span class="muted small">${st.consent_at ? "ได้รับความยินยอม " + st.consent_at : ""}</span></div>
       <div class="photos" style="margin:12px 0">${st.photos.map((p) => `<div class="thumb ${p.warnings.length ? "warn" : ""}" style="width:84px;height:84px" title="${esc(p.warnings.join(" · ") || "รูปดี")}">
-        <img src="${p.url}" alt=""></div>`).join("") || '<span class="muted">ยังไม่มีรูป</span>'}</div>
+        <img src="${p.url}" alt=""><button class="x" data-old="${p.id}" title="ลบรูปนี้">✕</button></div>`).join("") || '<span class="muted">ยังไม่มีรูป</span>'}</div>
       ${st.photos.filter((p) => p.warnings.length).map((p) => `<div class="small" style="color:var(--warn)">• ${esc(p.warnings.join(" · "))}</div>`).join("")}` : ""}
-    <div class="dropzone" id="dz" style="margin-top:14px">${ICONS.upload}<div>ลากรูปมาวาง หรือคลิกเพื่อเลือกรูป</div>
-      <div class="small">แนะนำ ${st?.risk_group ? "8–10" : "3–5"} รูป: หน้าตรง หันซ้าย/ขวาเล็กน้อย ต่างแสง ไม่ใส่แมสก์</div></div>
-    <div id="pending" class="small gold" style="margin-top:8px"></div>
     ${consentBlock("c2")}
+    <div class="dropzone" id="dz" style="margin-top:14px">${ICONS.upload}<div>ลากรูปมาวาง หรือคลิกเพื่อเลือกรูป — ตรวจหน้าให้ทันที <b>บันทึกเข้าห้องเมื่อกด "บันทึก"</b></div>
+      <div class="small">แนะนำ ${st?.risk_group ? "8–10" : "3–5"} รูป: หน้าตรง หันซ้าย/ขวาเล็กน้อย ต่างแสง ไม่ใส่แมสก์</div></div>
+    <div class="up-grid" id="ups"></div>
+    <div class="up-summary" id="up-sum"></div>
     <div class="modal-foot">
       ${st ? `<button class="btn danger" id="del" style="margin-right:auto">${ICONS.trash} ลบนักศึกษา</button>` : ""}
-      <button class="btn ghost" data-close>ปิด</button><button class="btn gold" id="save">บันทึก</button></div>`);
+      <button class="btn ghost" data-close>ยกเลิก</button><button class="btn gold" id="save">บันทึก</button></div>`,
+    { onClose: () => { if (changed) { loadStudents(); loadSection(); } },
+      beforeClose: () => !pendingCount() || confirmBox("ทิ้งการแก้ไข?", "รูปที่เลือกไว้และรูปที่ทำเครื่องหมายลบ ยังไม่ได้บันทึก — ถ้าปิดตอนนี้จะไม่มีอะไรเปลี่ยน", { ok: "ทิ้ง", danger: true }) });
 
-  let files = [];
+  // Nothing reaches the class until the teacher presses "บันทึก" and confirms:
+  // picked photos are only checked (face found? quality?) and kept here; old photos are only marked for deletion.
+  let changed = false;
+  const staged = [];                 // {file, tile, kind: "checking"|"ok"|"warn"|"bad", note}
+  const toDelete = new Set();        // ids of saved photos the teacher marked
+  let checks = Promise.resolve();
+  if (consentGiven) $("#c2", m.el).checked = true;
+  const usable = () => staged.filter((s) => s.kind === "ok" || s.kind === "warn");
+  const pendingCount = () => staged.length + toDelete.size;
+
+  const summary = () => {
+    const n = (k) => staged.filter((s) => s.kind === k).length;
+    const parts = [];
+    if (staged.length) parts.push(`พร้อมบันทึก <b class="gold">${usable().length}</b> / ${staged.length} รูป`);
+    if (n("warn")) parts.push(`<span style="color:var(--warn)">ควรเปลี่ยน ${n("warn")}</span>`);
+    if (n("bad")) parts.push(`<span style="color:var(--bad)">ไม่ผ่าน ${n("bad")} (จะไม่ถูกบันทึก)</span>`);
+    if (n("checking")) parts.push(`<span class="muted">กำลังตรวจ ${n("checking")}…</span>`);
+    if (toDelete.size) parts.push(`<span style="color:var(--bad)">จะลบรูปเดิม ${toDelete.size} รูป</span>`);
+    $("#up-sum", m.el).innerHTML = parts.length ? parts.join(" · ") + ' · <span class="muted">ยังไม่ได้บันทึก</span>' : "";
+  };
+
+  const setTile = (s, kind, label, title = "") => {
+    s.kind = kind;
+    s.tile.className = `up-thumb ${kind === "checking" || kind === "saving" ? "busy" : kind}`;
+    $(".st", s.tile).textContent = label;
+    s.tile.title = title;
+  };
+
+  let waiting = [];
+  $("#c2", m.el).addEventListener("change", (e) => {
+    if (e.target.checked && waiting.length) { const w = waiting; waiting = []; addFiles(w); }
+  });
+  const addFiles = (files) => {
+    if (!$("#c2", m.el).checked) {
+      waiting = waiting.concat(files);
+      $("#up-sum", m.el).innerHTML = `<span style="color:var(--warn)">ติ๊กยืนยันความยินยอมด้านบน เพื่อตรวจรูปที่เลือกไว้ ${waiting.length} รูป</span>`;
+      return toast("กรุณาติ๊กยืนยันความยินยอมก่อนเพิ่มรูป", "warn");
+    }
+    consentGiven = true;
+    for (const file of files) {
+      const s = { file, tile: document.createElement("div"), kind: "checking" };
+      s.tile.innerHTML = `<img src="${URL.createObjectURL(file)}" alt=""><button class="x" title="เอารูปนี้ออก">✕</button><div class="st"></div>`;
+      $("#ups", m.el).append(s.tile);
+      staged.push(s);
+      setTile(s, "checking", "กำลังตรวจ");
+      $(".x", s.tile).onclick = (e) => {
+        e.stopPropagation();
+        staged.splice(staged.indexOf(s), 1);
+        s.tile.remove();
+        summary();
+      };
+      checks = checks.then(async () => {
+        if (!staged.includes(s)) return;                       // removed before it was checked
+        try {
+          s.small = await shrinkImage(file);
+          const form = new FormData();
+          form.append("file", s.small, file.name);
+          form.append("consent", "true");
+          const r = await api("/api/photos/check", { method: "POST", body: form });
+          if (r.ok && r.face) $("img", s.tile).src = r.face;   // the face the system will use
+          if (!r.ok) setTile(s, "bad", "✗ " + r.message, r.message);
+          else if (r.warnings.length) setTile(s, "warn", "⚠ ควรเปลี่ยน", r.warnings.join(" · "));
+          else setTile(s, "ok", "✓ ผ่าน · รอบันทึก", "รูปดี");
+        } catch (err) { setTile(s, "bad", "✗ ตรวจไม่สำเร็จ", err.message); }
+        summary();
+      });
+      summary();
+    }
+  };
+
   const input = document.createElement("input");
   input.type = "file"; input.accept = "image/*"; input.multiple = true;
-  wireDropzone($("#dz", m.el), input, (f) => { files = files.concat(f); $("#pending", m.el).textContent = `เลือกไว้ ${files.length} รูป (จะอัปโหลดเมื่อกดบันทึก)`; });
-  if (consentGiven) $("#c2", m.el).checked = true;
+  wireDropzone($("#dz", m.el), input, addFiles);
+  if (initialFiles && initialFiles.length) addFiles(initialFiles);
+
+  // saved photos: tap ✕ to mark for deletion (tap again to keep) — deleted only when saving
+  $$("[data-old]", m.el).forEach((b) => b.onclick = (e) => {
+    e.stopPropagation();
+    const id = Number(b.dataset.old);
+    const thumb = b.closest(".thumb");
+    if (toDelete.has(id)) { toDelete.delete(id); thumb.classList.remove("marked"); b.textContent = "✕"; b.title = "ลบรูปนี้"; }
+    else { toDelete.add(id); thumb.classList.add("marked"); b.textContent = "↺"; b.title = "ยกเลิกการลบ"; }
+    summary();
+  });
 
   $("#save", m.el).onclick = async () => {
     const form = $("#f", m.el);
     if (!form.reportValidity()) return;
-    if (files.length && !$("#c2", m.el).checked) return toast("กรุณาติ๊กยืนยันความยินยอมก่อนเพิ่มรูป", "warn");
+    await checks;                                               // wait for photos still being checked
     const data = Object.fromEntries(new FormData(form));
+    const add = usable();
+    const skipped = staged.length - add.length;
+    if (add.length || toDelete.size) {
+      const lines = [];
+      if (add.length) lines.push(`เพิ่มรูปใหม่ <b>${add.length}</b> รูป`);
+      if (skipped) lines.push(`ข้ามรูปที่ไม่ผ่าน ${skipped} รูป`);
+      if (toDelete.size) lines.push(`ลบรูปเดิม <b>${toDelete.size}</b> รูป (ถาวร)`);
+      if (!(await confirmBox(`ยืนยันการบันทึก · ${data.name}`, lines.join("<br>"), { ok: "ยืนยันบันทึก" }))) return;
+    }
+    $("#save", m.el).disabled = true;
+    $("#save", m.el).innerHTML = '<span class="spinner"></span> กำลังบันทึก...';
     const body = { student_code: data.student_code, name: data.name };
     if (st) body.risk_group = !!form.risk_group.checked;
     const saved = await api(st ? `/api/students/${st.id}` : `/api/sections/${SECTION_ID}/students`, { method: st ? "PUT" : "POST", json: body });
+    changed = true;
+    for (const id of toDelete) await api(`/api/photos/${id}`, { method: "DELETE" });
+    let ok = 0;
+    const looks = new Set();
+    for (const s of add) {
+      setTile(s, "saving", "กำลังบันทึก");
+      try {
+        const f = new FormData();
+        f.append("files", s.small || s.file, s.file.name);
+        f.append("consent", "true");
+        const res = await api(`/api/students/${saved.id}/photos`, { method: "POST", body: f });
+        const r = res.results[0];
+        res.lookalikes.forEach((l) => looks.add(`${l.name} (${l.similarity})`));
+        if (r.ok) { ok++; setTile(s, r.warnings.length ? "warn" : "ok", "✓ บันทึกแล้ว"); }
+        else setTile(s, "bad", "✗ " + r.message, r.message);
+      } catch (err) { setTile(s, "bad", "✗ บันทึกไม่สำเร็จ", err.message); }
+    }
+    staged.length = 0; toDelete.clear();
     m.close();
-    if (files.length) { consentGiven = true; await uploadPhotos(saved, files); }
-    else { toast("บันทึกแล้ว"); loadStudents(); loadSection(); }
+    toast(add.length ? `บันทึก ${saved.name} แล้ว · เพิ่มรูป ${ok}/${add.length}` : `บันทึก ${saved.name} แล้ว`);
+    if (looks.size) toast(`หน้าคล้าย: ${[...looks].join(", ")} — จัดเข้ากลุ่มเสี่ยงแล้ว`, "warn", 6000);
   };
   if (st) $("#del", m.el).onclick = async () => {
     if (!(await confirmBox(`ลบ ${st.name}?`, "ข้อมูลนักศึกษา รูปใบหน้า embedding และประวัติการเช็คชื่อของคนนี้จะถูกลบถาวร", { ok: "ลบถาวร", danger: true }))) return;
@@ -250,28 +401,194 @@ function showImportReport(report) {
     <div class="modal-foot"><button class="btn gold" data-close>ตกลง</button></div>`, { wide: true });
 }
 
-function bulkDialog() {
+// Many students at once, from the teacher's own computer (works on the deployed site):
+// pick/drop a folder (sub-folder per student, or file name = student) or just many photos.
+function multiDialog() {
   const m = openModal(`
-    <div class="modal-head"><div><div class="eyebrow">หลายคนพร้อมกัน</div><h2>อัปโหลดรูปหลายคน</h2></div><button class="icon-btn" data-close>${ICONS.x}</button></div>
-    <p class="muted small">ตั้งชื่อไฟล์เป็นชื่อนักศึกษา เช่น <b>สมชาย.jpg</b>, <b>สมชาย(1).jpg</b> หรือ <b>6501234_สมชาย.jpg</b> — คนที่มีอยู่แล้วจะถูกเพิ่มรูปให้</p>
-    <div class="dropzone" id="dz">${ICONS.upload}<div>ลากรูปทั้งหมดมาวาง หรือคลิกเพื่อเลือก</div></div>
-    <div id="pending" class="small gold" style="margin-top:8px"></div>
+    <div class="modal-head"><div><div class="eyebrow">หลายคนพร้อมกัน</div><h2>นำเข้ารูปนักศึกษา</h2></div><button class="icon-btn" data-close>${ICONS.x}</button></div>
+    <div class="list-item" style="background:var(--info-bg);display:block"><b>ตั้งชื่อได้ 2 แบบ</b>
+      <div class="small muted">① โฟลเดอร์ย่อยต่อคน: <b>สมชาย/</b>1.jpg, 2.jpg &nbsp;·&nbsp; ② ไฟล์รวม: <b>สมชาย.jpg</b>, <b>สมชาย(1).jpg</b>
+      &nbsp;·&nbsp; ขึ้นต้นด้วยรหัส เช่น <b>6501234_สมชาย</b> จะแยกรหัสให้ · คนที่มีอยู่แล้วจะถูกเพิ่มรูปให้</div></div>
+    <div class="dropzone" id="dz" style="margin-top:14px">${ICONS.upload}<div>${IS_IOS ? "เลือกรูปจากแอปไฟล์ (Files)" : "ลากโฟลเดอร์หรือรูปมาวางตรงนี้"}</div>
+      <div class="row">${IS_IOS ? "" : `<button class="btn sm" id="pick-dir">${ICONS.folder} เลือกโฟลเดอร์</button>`}<button class="btn sm" id="pick-files">${ICONS.upload} เลือกรูป</button></div></div>
+    ${IS_IOS ? `<p class="small" style="color:var(--warn);margin:8px 0 0">iPhone/iPad เลือกทั้งโฟลเดอร์ไม่ได้ — เลือกหลายรูปจากแอปไฟล์ที่ตั้งชื่อไฟล์เป็นชื่อนักศึกษาไว้แล้ว
+      หรือใช้ปุ่ม "เพิ่มนักศึกษา" ทีละคน (เลือกจากคลังรูปหรือถ่ายจากกล้องได้)</p>` : ""}
+    <div id="preview"></div>
     ${consentBlock("c4")}
-    <div class="modal-foot"><button class="btn ghost" data-close>ยกเลิก</button><button class="btn gold" id="go">อัปโหลด</button></div>`);
-  let files = [];
-  wireDropzone($("#dz", m.el), $("#file-input"), (f) => { files = files.concat(f); $("#pending", m.el).textContent = `เลือกไว้ ${files.length} รูป`; });
+    <div class="modal-foot">
+      <button class="btn ghost sm" id="server" style="margin-right:auto" title="ใช้ตอนรันบนเครื่องตัวเอง">โฟลเดอร์บนเซิร์ฟเวอร์</button>
+      <button class="btn ghost" data-close>ยกเลิก</button><button class="btn gold" id="go" disabled>นำเข้า</button></div>`,
+    { wide: true, onClose: () => { if (done) { loadStudents(); loadSection(); } },
+      beforeClose: () => {
+        if (running) { toast("กำลังนำเข้าอยู่ รอให้เสร็จก่อน", "warn"); return false; }
+        return done || !chosen().length || confirmBox("ทิ้งรายการนี้?", "ยังไม่ได้กดนำเข้า — ถ้าปิดตอนนี้จะไม่มีอะไรถูกบันทึก", { ok: "ทิ้ง", danger: true });
+      } });
+
+  let groups = [];
+  let done = false;
+  let running = false;
+  const known = new Set(students.map((s) => s.name));
+
+  let meta = { layout: "", ignored: [] };
+  const urls = new Map();                                  // one preview URL per file
+  const urlOf = (f) => { if (!urls.has(f)) urls.set(f, URL.createObjectURL(f)); return urls.get(f); };
+  const live = () => groups.filter((g) => !g.removed);
+  const chosen = () => live().filter((g) => g.use && g.files.length);
+
+  const rowHtml = (g, i) => `
+    <div class="list-item group-row" data-i="${i}">
+      <input type="checkbox" data-use ${g.use ? "checked" : ""} title="ติ๊กออก = ข้ามคนนี้">
+      <div style="min-width:0">
+        <div class="row" style="gap:6px">
+          <input class="input sm" data-name value="${esc(g.name)}" placeholder="ชื่อนักศึกษา *" style="max-width:220px">
+          <input class="input sm" data-code value="${esc(g.code)}" placeholder="รหัส (ไม่บังคับ)" style="max-width:150px">
+          ${known.has(g.name) ? '<span class="badge line">มีอยู่แล้ว · เพิ่มรูป</span>' : ""}
+          ${CAMERA_NAME.test(g.name) ? '<span class="badge warn">ชื่อจากกล้อง? แก้ชื่อก่อน</span>' : ""}
+        </div>
+        <div class="mini" style="margin-top:8px">${g.files.map((f, j) => `<span class="mini-ph"><img src="${urlOf(f)}" alt="">
+          <button class="x" data-rm="${j}" title="เอารูปนี้ออก">✕</button></span>`).join("")}
+          <button class="btn sm ghost" data-add title="เพิ่มรูปให้คนนี้">${ICONS.plus} รูป</button></div>
+      </div>
+      <div class="row" style="gap:6px" data-side><span class="badge line" data-st>${g.files.length} รูป</span>
+        <button class="icon-btn" data-del title="เอาคนนี้ออกจากรายการ">${ICONS.trash}</button></div>
+    </div>`;
+
+  const summary = () => {
+    const use = chosen();
+    const n = use.reduce((a, g) => a + g.files.length, 0);
+    const el = $("#sum", m.el);
+    if (el) el.innerHTML = `พบ <b class="gold">${live().length}</b> คน · เลือกนำเข้า <b class="gold">${use.length}</b> คน ${n} รูป` +
+      (meta.layout ? ` · ${meta.layout === "subfolders" ? "แยกโฟลเดอร์ต่อคน" : "ชื่อไฟล์ = ชื่อนักศึกษา"}` : "") +
+      (meta.ignored.length ? `<span class="muted"> · ข้ามโฟลเดอร์ย่อย: ${meta.ignored.map(esc).join(", ")}</span>` : "") +
+      `<span class="muted"> · แก้ชื่อ/รหัส เพิ่มหรือลบรูปของแต่ละคนได้ก่อนกดนำเข้า</span>`;
+    $("#go", m.el).disabled = !use.length;
+    $("#go", m.el).textContent = `นำเข้า ${use.length} คน`;
+  };
+
+  const wireRow = (row) => {
+    const g = groups[row.dataset.i];
+    $("[data-use]", row).onchange = (e) => { g.use = e.target.checked; summary(); };
+    $("[data-name]", row).oninput = (e) => { g.name = e.target.value.trim(); summary(); };
+    $("[data-code]", row).oninput = (e) => { g.code = e.target.value.trim(); };
+    $$("[data-rm]", row).forEach((b) => b.onclick = () => { g.files.splice(Number(b.dataset.rm), 1); redrawRow(row); });
+    $("[data-add]", row).onclick = async () => {
+      const more = (await pickFiles()).filter((x) => IMG_EXT.test(x.file.name)).map((x) => x.file);
+      if (more.length) { g.files.push(...more); g.use = true; redrawRow(row); }
+    };
+    $("[data-del]", row).onclick = () => { g.removed = true; row.remove(); summary(); };
+  };
+  const redrawRow = (row) => {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = rowHtml(groups[row.dataset.i], row.dataset.i);
+    const fresh = tmp.firstElementChild;
+    row.replaceWith(fresh);
+    wireRow(fresh);
+    summary();
+  };
+
+  const draw = () => {
+    $("#preview", m.el).innerHTML = `
+      <p class="small" id="sum" style="margin:14px 0 8px"></p>
+      ${groups.some((g) => CAMERA_NAME.test(g.name)) ? `<p class="small" style="color:var(--warn);margin:0 0 8px">⚠ บางคนได้ชื่อจากชื่อไฟล์กล้อง (เช่น IMG_1234) — พิมพ์ชื่อจริงในช่องชื่อได้เลย</p>` : ""}
+      <div class="progress hidden" id="bar"><i></i></div><div class="small muted" id="bar-txt"></div>
+      <div class="list" id="glist" style="max-height:46vh;overflow:auto">${groups.map(rowHtml).join("")}</div>
+      <button class="btn sm" id="add-person" style="margin-top:8px">${ICONS.plus} เพิ่มคน (เลือกรูปเอง)</button>`;
+    $$("#glist .group-row", m.el).forEach(wireRow);
+    $("#add-person", m.el).onclick = () => {
+      groups.push({ code: "", name: "", files: [], use: true });
+      const tmp = document.createElement("div");
+      tmp.innerHTML = rowHtml(groups[groups.length - 1], groups.length - 1);
+      const row = tmp.firstElementChild;
+      $("#glist", m.el).append(row);
+      wireRow(row);
+      $("[data-name]", row).focus();
+      summary();
+    };
+    summary();
+  };
+  const load = (list) => {
+    if (running || !list.length) return;
+    const data = groupFiles(list);
+    meta = data;
+    groups = data.groups.map((g) => ({ ...g, use: true }));
+    if (!groups.length) toast("ไม่พบรูป (.jpg .png .webp)", "warn");
+    draw();
+  };
+  draw();
+
+  const dz = $("#dz", m.el);
+  ["dragenter", "dragover"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add("drag"); }));
+  ["dragleave", "drop"].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove("drag"); }));
+  dz.addEventListener("drop", async (e) => load(await filesFromDrop(e)));
+  if (!IS_IOS) $("#pick-dir", m.el).onclick = async (e) => { e.stopPropagation(); load(await pickFiles({ folder: true })); };
+  $("#pick-files", m.el).onclick = async (e) => { e.stopPropagation(); load(await pickFiles()); };
+  $("#server", m.el).onclick = () => { m.close(); importDialog(); };
+
   $("#go", m.el).onclick = async () => {
-    if (!files.length) return toast("ยังไม่ได้เลือกรูป", "warn");
+    if (done) return m.close();
     if (!$("#c4", m.el).checked) return toast("กรุณาติ๊กยืนยันความยินยอมก่อน", "warn");
-    const form = new FormData();
-    files.forEach((f) => form.append("files", f));
-    form.append("consent", "true");
-    $("#go", m.el).innerHTML = '<span class="spinner"></span> กำลังประมวลผล...';
-    const report = await api(`/api/sections/${SECTION_ID}/bulk`, { method: "POST", body: form });
-    consentGiven = true;
-    m.close();
-    showImportReport({ ...report, students: [...new Set(report.students.map((s) => s.name))] });
-    loadStudents(); loadSection();
+    const todo = chosen();
+    if (!todo.length) return toast("ยังไม่ได้เลือกใคร", "warn");
+    if (todo.some((g) => !g.name)) return toast("ยังมีคนที่ไม่ได้ใส่ชื่อ", "warn");
+    const nPhotos = todo.reduce((a, g) => a + g.files.length, 0);
+    if (!(await confirmBox(`ยืนยันนำเข้า ${todo.length} คน?`, `รูป ${nPhotos} รูปจะถูกบันทึกเข้าห้องนี้ (คนที่มีอยู่แล้วจะถูกเพิ่มรูป)`, { ok: "ยืนยันบันทึก" }))) return;
+    consentGiven = true; running = true;
+    $("#go", m.el).disabled = true;
+    $$("#glist input, #glist button, #add-person", m.el).forEach((c) => c.disabled = true);
+    $("#bar", m.el).classList.remove("hidden");
+    const totalPhotos = todo.reduce((a, g) => a + g.files.length, 0);
+    let sent = 0, okPeople = 0, okPhotos = 0, problems = 0, looks = 0;
+    for (const g of todo) {
+      const row = $(`[data-i="${groups.indexOf(g)}"]`, m.el);
+      const badge = $("[data-st]", row);
+      badge.className = "badge warn"; badge.innerHTML = '<span class="spinner"></span> กำลังอัป';
+      row.scrollIntoView({ block: "nearest" });
+      const label = g.code ? `${g.code}_${g.name}` : g.name;
+      let ok = 0; const notes = [];
+      for (let k = 0; k < g.files.length; k += 4) {            // small requests: fast feedback, no size limit issues
+        const chunk = g.files.slice(k, k + 4);
+        const form = new FormData();
+        for (const [j, f] of chunk.entries()) form.append("files", await shrinkImage(f), `${label}(${k + j + 1}).jpg`);
+        form.append("consent", "true");
+        try {
+          const rep = await api(`/api/sections/${SECTION_ID}/bulk`, { method: "POST", body: form });
+          ok += rep.students.length;
+          looks = Math.max(looks, rep.lookalikes || 0);
+          rep.problems.forEach((p) => notes.push(p.message));
+        } catch (err) { notes.push(err.message); }
+        sent += chunk.length;
+        $("#bar > i", m.el).style.width = `${Math.round((sent / totalPhotos) * 100)}%`;
+        $("#bar-txt", m.el).textContent = `กำลังอัป ${todo.indexOf(g) + 1}/${todo.length} คน · ${sent}/${totalPhotos} รูป`;
+      }
+      okPhotos += ok; problems += notes.length;
+      if (ok) okPeople++;
+      badge.className = `badge ${!ok ? "bad" : notes.length ? "warn" : "ok"}`;
+      badge.textContent = !ok ? "✗ ไม่ผ่าน" : `✓ ${ok}/${g.files.length} รูป${notes.length ? " · ⚠" : ""}`;
+      badge.title = notes.join("\n");
+      done = true;
+    }
+    running = false;
+    // after import: open any person to rename, add or delete photos (same dialog as the student card)
+    students = await api(`/api/sections/${SECTION_ID}/students`);
+    for (const g of todo) {
+      const st = students.find((s) => s.name === g.name);
+      const side = $(`[data-i="${groups.indexOf(g)}"] [data-side]`, m.el);
+      if (!st || !side) continue;
+      const b = document.createElement("button");
+      b.className = "btn sm"; b.innerHTML = `${ICONS.edit} แก้ไข / เพิ่มรูป`;
+      b.onclick = async () => {
+        const fresh = (await api(`/api/sections/${SECTION_ID}/students`)).find((s) => s.id === st.id);
+        if (fresh) studentDialog(fresh);
+      };
+      $("[data-del]", side)?.remove();
+      side.append(b);
+    }
+    $("#bar-txt", m.el).innerHTML = `<b class="gold">เสร็จแล้ว</b> · นำเข้า ${okPeople}/${todo.length} คน · ${okPhotos}/${totalPhotos} รูป` +
+      (problems ? ` · <span style="color:var(--warn)">มี ${problems} รูปที่ควรตรวจ (ชี้ที่ป้ายเพื่อดูเหตุผล)</span>` : "") +
+      (looks ? ` · <span style="color:var(--warn)">หน้าคล้าย ${looks} คู่ — จัดเข้ากลุ่มเสี่ยงแล้ว</span>` : "");
+    $("#go", m.el).disabled = false;
+    $("#go", m.el).textContent = "ปิด";
+    toast(`นำเข้า ${okPeople} คน · ${okPhotos} รูป`);
   };
 }
 

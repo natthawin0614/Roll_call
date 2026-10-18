@@ -93,13 +93,15 @@ function toast(message, kind = "ok", ms = 3800) {
 }
 
 // ---------------------------------------------------------------- modals
-function openModal(html, { wide = false, onClose } = {}) {
+function openModal(html, { wide = false, onClose, beforeClose } = {}) {
   const back = document.createElement("div");
   back.className = "modal-back";
   back.innerHTML = `<div class="modal ${wide ? "wide" : ""}">${html}</div>`;
   const close = () => { back.remove(); onClose && onClose(); };
-  back.addEventListener("mousedown", (e) => { if (e.target === back) close(); });
-  $$("[data-close]", back).forEach((b) => b.addEventListener("click", close));
+  // closing by the user (✕ / Cancel / backdrop) can be stopped, e.g. "discard unsaved photos?"
+  const userClose = async () => { if (!beforeClose || (await beforeClose())) close(); };
+  back.addEventListener("mousedown", (e) => { if (e.target === back) userClose(); });
+  $$("[data-close]", back).forEach((b) => b.addEventListener("click", userClose));
   document.body.append(back);
   return { el: back, close };
 }

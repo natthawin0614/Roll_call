@@ -164,6 +164,14 @@ async def upload_photos(student_id: int, consent: bool = Form(False), files: lis
     return {"results": results, "lookalikes": lookalikes}
 
 
+@router.post("/photos/check")
+async def check_photo(consent: bool = Form(False), file: UploadFile = File(...)):
+    """Preview only: detect the face and check quality without saving anything."""
+    if not consent:
+        raise HTTPException(400, "ต้องยืนยันว่าได้รับความยินยอมจากนักศึกษาก่อน")
+    return enroll.check_photo(await file.read())
+
+
 @router.delete("/photos/{photo_id}")
 def delete_photo(photo_id: int, db: DB = Depends(get_db)):
     photo = get_or_404(db, FacePhoto, photo_id)

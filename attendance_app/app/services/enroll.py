@@ -41,7 +41,27 @@ def add_photo(db, student, image_bytes, source="upload"):
         student.consent_at = now()
     db.commit()
     matcher.invalidate(student.section_id)
-    return {"ok": True, "message": "เพิ่มรูปแล้ว", "warnings": warnings, "photo_id": photo.id}
+    return {"ok": True, "message": "เพิ่มรูปแล้ว", "warnings": warnings, "photo_id": photo.id,
+            "url": storage.media_url(photo.face_path)}
+
+
+def check_photo(image_bytes):
+    """Same checks as add_photo, but nothing is stored: lets the page show the result before the teacher saves.
+    Returns {"ok", "message", "warnings", "face": data-URL of the aligned face}."""
+    import base64
+    import cv2
+    image = read_image(image_bytes)
+    if image is None:
+        return {"ok": False, "message": "เปิดไฟล์รูปไม่ได้", "warnings": []}
+    faces = get_pipeline().analyze(image)
+    if not faces:
+        return {"ok": False, "message": "หาหน้าในรูปไม่เจอ", "warnings": []}
+    warnings = quality_warnings(faces[0].quality)
+    if len(faces) > 1:
+        warnings.append(f"เจอ {len(faces)} หน้า ใช้หน้าที่ใหญ่ที่สุด")
+    ok, buf = cv2.imencode(".jpg", faces[0].aligned, [cv2.IMWRITE_JPEG_QUALITY, 85])
+    face = "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode() if ok else None
+    return {"ok": True, "message": "ผ่าน", "warnings": warnings, "face": face}
 
 
 def add_face_from_live(db, student, aligned_face, crop_bgr):
